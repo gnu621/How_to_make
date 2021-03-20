@@ -1,0 +1,185 @@
+Elements of a Makefile
+
+Most makefiles have at least two basic components: macros and target definitions. Macros are useful 
+in the same way constants are: they allow you to quickly change major facets of your program that appear in multiple places. 
+For instance, you can create a macro to substitute the name of your compiler. Then if you move from using gcc to 
+another compiler, you can quickly change your builds with only a one-line change.
+
+Comments
+Note that it's possible to include comments in makefiles: simply preface a comment with a pound sign, #, 
+and the rest of the line will be ignored.
+
+Macros
+Macros are written in a simple x=y form. For instance, to set your C compiler to gcc, you might write:
+
+CC=gcc
+
+To actually convert a macro into its value in a target, you simply enclose it within $(): for instance, to convert CC into the name of the compiler:
+
+$(CC) a_source_file.c
+
+might expand to
+
+gcc a_source_file.c
+
+It is possible to specify one macro in terms of another; for instance, you could have a macro for the compiler options, 
+OPT, and the compiler, CC, combined into a compile-command, COMP:
+
+COMP = $(CC) $(OPT)
+
+There are some macros that are specified by default; you can list them by typing
+
+% make -p
+
+For instance, CC defaults to the cc compiler. Note that any environment variables that you have set will be 
+imported as macros into your makefile (and will override the defaults).
+
+Targets
+
+Targets are the heart of what a makefile does: they convert a command-line input into a series of actions. 
+For instance, the "make clean" command tells make to execute the code that follows the "clean" target. 
+Targets have three components: the name of the target, the dependencies of the target, and finally the actions 
+associated with the target:
+
+target: [dependencies]
+        <command>
+        <command 2>
+        ...
+Note that each command must be proceeded by a tab (yes, a tab, not four, or eight, spaces). 
+Be sure to prevent your text editor from expanding the tabs!
+
+The dependencies associated with a target are either other targets or files themselves. If they're files, 
+then the target commands will only be executed if any of the dependent files have changed since the last 
+time the command was executed. If the dependency is another target, then that target's commands will be 
+evaluated in the same way.
+
+A simple command might have no dependencies if you want it to execute all the time. For example, "clean" might look like this:
+
+clean:
+        rm -f *.o core
+        
+On the other hand, if you have a command to compile a program, you probably want to make the compilation 
+depend on the source files to compile. This might result in a makefile that looks like this:
+
+CC = gcc
+FILES = in_one.c in_two.c
+OUT_EXE = out_executable
+ 
+build: $(FILES)
+        $(CC) -o $(OUT_EXE) $(FILES)
+        
+Now when you type "make build" if the dependencies in_one.c and in_two.c are older than the object files 
+created, then make will reply that there is "nothing to be done." Note that this can be problematic if you 
+leave out a dependency!
+
+If this were an issue, one option would be to include a target to force a rebuild. This would depend on 
+both the "clean" target and the build target (in that order). The above sample file could be amended to 
+include this:
+
+CC = gcc
+FILES = in_one.c in_two.c
+OUT_EXE = out_executable
+ 
+build: $(FILES)
+        $(CC) -o $(OUT_EXE) $(FILES)
+ 
+clean:
+        rm -f *.o core
+ 
+rebuild: clean build
+
+Now when rebuild is the target, make will first execute the commands associated with clean and then those associated with build.
+
+When Targets Fail
+
+When a target is executed, it returns a status based on whether or not it was successful--if a target fails, then 
+make will not execute any targets that depend on it. For instance, in the above example, if "clean" fails, then 
+rebuild will not execute the "build" target. Unfortunately, this might happen if there is no core file to remove. 
+Fortunately, this problem can be solved easily enough by including a minus sign in front of the command whose status 
+should be ignored:
+
+clean:
+        -rm -f *.o core
+
+The Default Target
+
+Typing "make" alone should generally result in some kind of reasonable behavior. When you type "make" without 
+specifying a target in the corresponding makefile, it will simply execute the first target in the makefile. 
+Note that in the above example, the "build" target was placed above the "clean" target--this is more reasonable
+(and intuitive) behavior than removing the results of a build when the user types "make"!
+
+
+$@
+$@ is the name of the target. This allows you to easily write a generic action that can be used for multiple 
+different targets that produce different output files. For example, the following two targets produce output 
+files named client and server respectively.
+
+client: client.c
+        $(CC) client.c -o $@
+ 
+server: server.c
+        $(CC) server.c -o $@
+       
+$?
+The $? macro stores the list of dependents more recent than the target (i.e., those that have changed since the
+last time make was invoked for the given target). We can use this to make the build commands from the above example
+even more general:
+
+client: client.c
+        $(CC) $? -o $@
+ 
+server: server.c
+        $(CC) $? -o $@
+
+
+$^
+$^ gives you all dependencies, regardless of whether they are more recent than the target. Duplicate names, 
+however, will be removed. This might be useful if you produce transient output (such as displaying a result 
+to the screen rather than saving it to a file).
+
+# print the source to the screen
+viewsource: client.c server.c
+        less $^
+        
+$+
+$+ is like $^, but it keeps duplicates and gives you the entire list of dependencies in the order they appear.
+
+# print the source to the screen
+viewsource: client.c server.c
+        less $+
+ 
+$<
+If you only need the first dependency, then $< is for you. Using $< can be safer than relying on $^ when you 
+have only a single dependency that needs to appear in the commands executed by the target. If you start by 
+using $^ when you have a single dependency, if you then add a second, it may be problematic, whereas if you 
+had used $< from the beginning, it will continue to work. (Of course, you may want to have all dependencies 
+show up. Consider your needs carefully.)
+
+Wildcard Matching in Targets (Pattern Rules)
+The percent sign, %, can be used to perform wildcard matching to write more general targets; when a % appears 
+in the dependencies list, it replaces the same string of text throughout the command in makefile target. If you
+wish to use the matched text in the target itself, use the special variable $*. For instance, the following 
+example will let you type make <name of .c file> to build an executable file with the given name:
+
+%:
+        gcc -o $* $*.c
+        
+For example,
+
+% make test_executable
+would run
+
+gcc -o test_executable test_executable.c
+
+Macro Modification
+Since the point of using macros is to eliminate redundant text, it should come as no surprise that it is possible 
+to transform macros from one type into another using various macro modifications.
+
+Replacing Text
+It is possible to create a new macro based on replacing part of an old macro. For instance, given a list of source 
+files, called SRC, you might wish to generate the corresponding object files, stored in a macro called OBJ. To do so, 
+you can specify that OBJ is equivalent to SRC, except with the .c extension replaced with a .o extension:
+
+OBJ = $(SRC:.c=.o)
+
+Note that this is effectively saying that in the macro SRC, .c should be replaced with .o.
